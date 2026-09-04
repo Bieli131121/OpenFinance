@@ -3,12 +3,15 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
+import { PrivacyToggle } from './privacy-toggle';
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: '🏠' },
+  { href: '/search', label: 'Buscar', icon: '🔍' },
   { href: '/cards', label: 'Cartões', icon: '💳' },
   { href: '/accounts', label: 'Contas', icon: '🏦' },
   { href: '/transactions', label: 'Transações', icon: '💰' },
+  { href: '/budgets', label: 'Orçamento', icon: '📐' },
   { href: '/analytics', label: 'Análises', icon: '📊' },
   { href: '/calendar', label: 'Calendário', icon: '📅' },
   { href: '/recurring', label: 'Recorrentes', icon: '🔄' },
@@ -45,6 +48,9 @@ export function Sidebar() {
           </Link>
         ))}
       </nav>
+      <div className="mt-6 border-t border-neutral-100 pt-3 dark:border-neutral-900">
+        <PrivacyToggle />
+      </div>
     </aside>
   );
 }
