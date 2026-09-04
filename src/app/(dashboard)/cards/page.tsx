@@ -1,0 +1,152 @@
+import { getCardsWithInvoices } from '@/lib/supabase/queries/cards';
+import { getAccountsWithBalances } from '@/lib/supabase/queries/accounts';
+import { getInstallmentPurchasesByCard, getFutureInstallmentsCommitment } from '@/lib/supabase/queries/installments';
+import { addManualCardAction, addCardPurchaseAction, recalculateInvoiceAction, deleteCardAction, payInvoiceAction } from './actions';
+import { DeleteButton } from '@/components/ui/delete-button';
+
+function formatBRL(v: number) {
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+export default async function CardsPage() {
+  const [cards, accounts] = await Promise.all([getCardsWithInvoices(), getAccountsWithBalances()]);
+  const futureCommitment = await getFutureInstallmentsCommitment(6);
+
+  const cardsWithPurchases = await Promise.all(
+    cards.map(async (card) => ({ card, purchases: await getInstallmentPurchasesByCard(card.id) }))
+  );
+
+  return (
+    <div className="space-y-8">
+      <h1 className="text-2xl font-bold">Cartões</h1>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {cardsWithPurchases.map(({ card, purchases }) => {
+          const limit = Number(card.credit_limit ?? 0);
+          const available = Number(card.available_limit ?? 0);
+          const used = limit > 0 ? Math.round(((limit - available) / limit) * 100) : 0;
+          const invoice = card.current_invoice;
+
+          return (
+            <div key={card.id} className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800">
+              <div className="flex items-center justify-between">
+                <p className="font-medium">{card.name}</p>
+                <div className="flex items-center gap-2">
+                  {card.last_four && <span className="text-xs text-neutral-500">•••• {card.last_four}</span>}
+                  <DeleteButton action={deleteCardAction} id={card.id} confirmMessage="Arquivar este cartão?" />
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-xs text-neutral-500">Limite total</p><p className="font-semibold">{formatBRL(limit)}</p></div>
+                <div><p className="text-xs text-neutral-500">Limite disponível</p><p className="font-semibold">{formatBRL(available)}</p></div>
+              </div>
+
+              <div className="mt-3">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
+                  <div className="h-full bg-brand-500" style={{ width: `${Math.min(used, 100)}%` }} />
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">{used}% utilizado</p>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-neutral-100 pt-3 text-sm dark:border-neutral-900">
+                <span className="text-neutral-500">Fatura atual</span>
+                <span className="font-semibold">{formatBRL(Number(invoice?.total_amount ?? 0))}</span>
+              </div>
+
+              {invoice && invoice.status !== 'paid' && Number(invoice.total_amount) > 0 && (
+                <form action={payInvoiceAction} className="mt-3 flex gap-2">
+                  <input type="hidden" name="invoiceId" value={invoice.id} />
+                  <select name="accountId" required className="flex-1 rounded-lg border border-neutral-300 px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-900">
+                    <option value="">Pagar com...</option>
+                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  <button type="submit" className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-600">
+                    Pagar fatura
+                  </button>
+                </form>
+              )}
+
+              {purchases.length > 0 && (
+                <div className="mt-4 space-y-2 border-t border-neutral-100 pt-3 dark:border-neutral-900">
+                  <p className="text-xs font-medium text-neutral-500">COMPRAS PARCELADAS</p>
+                  {purchases.map((p) => {
+                    const remaining = p.installmentTotal - p.installmentsPaid;
+                    return (
+                      <div key={p.groupId} className="flex items-center justify-between text-sm">
+                        <span>{p.description}</span>
+                        <span className="text-right text-xs text-neutral-500">
+                          {Math.min(p.installmentsPaid + 1, p.installmentTotal)}/{p.installmentTotal} — restam {formatBRL(remaining * p.installmentAmount)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <form action={recalculateInvoiceAction} className="mt-3">
+                <input type="hidden" name="cardId" value={card.id} />
+                <button type="submit" className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300">
+                  ↻ Recalcular fatura
+                </button>
+              </form>
+            </div>
+          );
+        })}
+        {cards.length === 0 && (
+          <div className="col-span-full rounded-2xl border border-dashed border-neutral-300 p-8 text-center text-neutral-500 dark:border-neutral-700">
+            Nenhum cartão cadastrado ainda.
+          </div>
+        )}
+      </div>
+
+      {futureCommitment.some((m) => m.amount > 0) && (
+        <div className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800">
+          <h2 className="mb-3 text-sm font-medium text-neutral-500">PARCELAMENTOS FUTUROS</h2>
+          <div className="space-y-1">
+            {futureCommitment.map((m, idx) => (
+              <div key={idx} className="flex justify-between text-sm capitalize">
+                <span className="text-neutral-600 dark:text-neutral-400">{m.label}</span>
+                <span className="font-medium">{formatBRL(m.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {cards.length > 0 && (
+        <div className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800">
+          <h2 className="mb-4 text-lg font-semibold">Nova compra parcelada</h2>
+          <form action={addCardPurchaseAction} className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+            <select name="cardId" required className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+              <option value="">Cartão</option>
+              {cards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <input name="description" required placeholder="Descrição (ex: Notebook)" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+            <input name="totalAmount" type="number" step="0.01" required placeholder="Valor total" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+            <input name="installments" type="number" min={1} max={48} defaultValue={1} required placeholder="Nº de parcelas" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+            <input name="purchaseDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+            <button type="submit" className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 sm:col-span-5">
+              Registrar compra
+            </button>
+          </form>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800">
+        <h2 className="mb-4 text-lg font-semibold">Adicionar cartão manual</h2>
+        <form action={addManualCardAction} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <input name="name" required placeholder="Nome do cartão" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+          <input name="brand" placeholder="Bandeira (ex: mastercard)" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+          <input name="lastFour" placeholder="Últimos 4 dígitos" maxLength={4} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+          <input name="creditLimit" type="number" step="0.01" required placeholder="Limite total" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+          <input name="closingDay" type="number" min={1} max={31} required placeholder="Dia de fechamento" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+          <input name="dueDay" type="number" min={1} max={31} required placeholder="Dia de vencimento" className="rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900" />
+          <button type="submit" className="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 sm:col-span-3">
+            Adicionar cartão
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}

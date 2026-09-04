@@ -1,20 +1,28 @@
 import { SummaryCards } from '@/components/dashboard/summary-cards';
+import { InsightsPanel } from '@/components/dashboard/insights-panel';
+import { Money } from '@/contexts/privacy-context';
 import { getOpenFinanceProvider } from '@/lib/open-finance';
-
-function formatBRL(v: number) {
-  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+import { getMonthlyIncomeExpense } from '@/lib/supabase/queries/transactions';
+import { getCardsWithInvoices } from '@/lib/supabase/queries/cards';
+import { getNetWorthBreakdown } from '@/lib/supabase/queries/net-worth';
+import { getTotalBalance } from '@/lib/supabase/queries/accounts';
+import { getTotalInvested } from '@/lib/supabase/queries/investments';
+import { getTotalDebts } from '@/lib/supabase/queries/loans';
+import { getInsights } from '@/lib/supabase/queries/insights';
 
 export default async function DashboardPage() {
-  // TODO: substituir por agregações reais vindas do Supabase (accounts, transactions, invoices, investments, loans)
-  const netWorth = 84350;
-  const totalBalance = 12450;
-  const monthlyIncome = 9850;
-  const monthlyExpenses = 6320;
-  const invested = 32500;
-  const debts = 18200;
-  const cardLimit = 15000;
-  const currentInvoice = 2840;
+  const [{ income, expense }, cards, netWorth, totalBalance, invested, debts, insights] = await Promise.all([
+    getMonthlyIncomeExpense(),
+    getCardsWithInvoices(),
+    getNetWorthBreakdown(),
+    getTotalBalance(),
+    getTotalInvested(),
+    getTotalDebts(),
+    getInsights(),
+  ]);
+
+  const cardLimit = cards.reduce((s, c) => s + Number(c.credit_limit ?? 0), 0);
+  const currentInvoices = cards.reduce((s, c) => s + Number(c.current_invoice?.total_amount ?? 0), 0);
 
   const provider = getOpenFinanceProvider();
 
@@ -22,7 +30,7 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       <div>
         <p className="text-sm text-neutral-500">Patrimônio líquido</p>
-        <h1 className="text-3xl font-bold">{formatBRL(netWorth)}</h1>
+        <Money value={netWorth.netWorth} className="block text-3xl font-bold" />
       </div>
 
       {!provider && (
@@ -34,15 +42,17 @@ export default async function DashboardPage() {
 
       <SummaryCards
         cards={[
-          { label: 'Saldo total', value: formatBRL(totalBalance) },
-          { label: 'Receitas do mês', value: formatBRL(monthlyIncome), tone: 'positive' },
-          { label: 'Despesas do mês', value: formatBRL(monthlyExpenses), tone: 'negative' },
-          { label: 'Investimentos', value: formatBRL(invested) },
-          { label: 'Dívidas', value: formatBRL(debts), tone: 'negative' },
-          { label: 'Limite dos cartões', value: formatBRL(cardLimit) },
-          { label: 'Fatura atual', value: formatBRL(currentInvoice) },
+          { label: 'Saldo total', value: totalBalance },
+          { label: 'Receitas do mês', value: income, tone: 'positive' },
+          { label: 'Despesas do mês', value: expense, tone: 'negative' },
+          { label: 'Investimentos', value: invested },
+          { label: 'Dívidas', value: debts, tone: 'negative' },
+          { label: 'Limite dos cartões', value: cardLimit },
+          { label: 'Fatura atual', value: currentInvoices },
         ]}
       />
+
+      <InsightsPanel insights={insights} />
     </div>
   );
 }
