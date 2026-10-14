@@ -1,0 +1,11 @@
+{
+  "remoteName": "origin",
+  "projects": [
+    {
+      "id": "prj_FrFVCe1pJzihn9IC0tT5VNFd2k8S",
+      "name": "open-finance",
+      "directory": ".",
+      "orgId": "team_J6zDtyV1XG3IlRzwrgJHCm61"
+    }
+  ]
+}
